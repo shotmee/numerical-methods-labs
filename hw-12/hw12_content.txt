@@ -1,0 +1,163 @@
+[Markdown Cell]
+# Домашняя работа 12. Полная проблема собственных значений. Сингулярное разложение (SVD)
+**Колпакова Дарья Сергеевна, группа J3112, ИСУ 501390**
+
+**Вариант 11**
+
+**Задание:**
+Для матрицы из ДЗ-7 найти приближение её сингулярного разложения ($A = USV^T$). Для этого с помощью метода Якоби (вращений) для полной проблемы собственных чисел найти собственные векторы матриц $AA^T$ и $A^TA$ (нормированные), а также сингулярные числа матрицы $A$.
+
+Матрица $A$ строится из файла `housing.csv` (строки 150-164).
+
+### Теоретическая справка
+
+Сингулярное разложение матрицы $A_{m \times n}$ имеет вид:
+$$A = U S V^T$$
+где $U$ — ортогональная матрица левых сингулярных векторов (размера $m \times m$), $V$ — ортогональная матрица правых сингулярных векторов (размера $n \times n$), а $S$ — диагональная матрица сингулярных чисел.
+
+Сингулярные числа $\sigma_i$ равны квадратным корням из ненулевых собственных значений матриц $A^T A$ (или $A A^T$).
+Матрица $U$ состоит из собственных векторов матрицы $A A^T$, а матрица $V$ — из собственных векторов матрицы $A^T A$.
+
+Для нахождения собственных значений и векторов симметричной матрицы используется **метод вращений Якоби**. 
+На каждом шаге строится матрица вращения $S_k$, обнуляющая максимальный внедиагональный элемент $a_{pq}$.
+$$A_{k+1} = S_k^T A_k S_k$$
+Собственные векторы накапливаются: $U_{k+1} = U_k S_k$.
+Параметры вращения $\cos \phi$ и $\sin \phi$ вычисляются через:
+$$t = \frac{2a_{pq}}{a_{pp} - a_{qq}}$$
+$$\cos \phi = \sqrt{\frac{1}{2}\left(1 + \frac{1}{\sqrt{1+t^2}}\right)}, \quad \sin \phi = \text{sign}(t) \sqrt{\frac{1}{2}\left(1 - \frac{1}{\sqrt{1+t^2}}\right)}$$
+
+[Code Cell]
+import numpy as np
+import pandas as pd
+
+np.set_printoptions(precision=6, suppress=True)
+
+VARIANT = 11
+ROWS_IN_MATRIX = 15
+EXPECTED_COLS = 14
+CSV_PATH = "housing.csv"
+
+def read_housing_csv(path):
+    for header_mode in ["infer", None]:
+        df = pd.read_csv(path, header=header_mode)
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.shape[1] == EXPECTED_COLS:
+            return numeric_df
+    raise ValueError("Не удалось получить 14 числовых столбцов из файла housing.csv.")
+
+def jacobi_method(M, tol=1e-9, max_iter=5000):
+    """
+    Метод Якоби для нахождения собственных значений и векторов симметричной матрицы.
+    Возвращает собственные значения и матрицу собственных векторов.
+    """
+    n = M.shape[0]
+    A = M.copy()
+    U = np.eye(n)
+    
+    for _ in range(max_iter):
+        # Находим максимальный по модулю внедиагональный элемент
+        max_val = 0.0
+        p, q = 0, 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                if abs(A[i, j]) > max_val:
+                    max_val = abs(A[i, j])
+                    p, q = i, j
+                    
+        if max_val < tol:
+            break
+            
+        # Вычисляем параметры вращения
+        if A[p, p] == A[q, q]:
+            c = np.cos(np.pi / 4)
+            s = np.sin(np.pi / 4)
+        else:
+            t = 2 * A[p, q] / (A[p, p] - A[q, q])
+            c = np.sqrt(0.5 * (1 + 1 / np.sqrt(1 + t**2)))
+            s = np.sign(t) * np.sqrt(0.5 * (1 - 1 / np.sqrt(1 + t**2)))
+            
+        # Матрица вращения
+        S = np.eye(n)
+        S[p, p] = c
+        S[q, q] = c
+        S[p, q] = -s
+        S[q, p] = s
+        
+        # Обновляем A и U
+        A = S.T @ A @ S
+        U = U @ S
+        
+    eigenvalues = np.diag(A)
+    # Сортировка по убыванию
+    idx = np.argsort(eigenvalues)[::-1]
+    return eigenvalues[idx], U[:, idx]
+
+# ---------- Чтение данных и построение матрицы ----------
+df = read_housing_csv(CSV_PATH)
+data = df.to_numpy(dtype=float)
+
+start_row = (VARIANT - 1) * ROWS_IN_MATRIX
+end_row = VARIANT * ROWS_IN_MATRIX
+
+A = data[start_row:end_row, :]
+
+print(f"Матрица A ({A.shape[0]}x{A.shape[1]}):")
+print(A)
+
+# ---------- SVD через метод Якоби ----------
+print("\n--- Вычисление SVD ---")
+
+# 1. Правые сингулярные векторы (V) из A^T A
+ATA = A.T @ A
+eigvals_V, V = jacobi_method(ATA)
+
+# 2. Левые сингулярные векторы (U) из A A^T
+AAT = A @ A.T
+eigvals_U, U = jacobi_method(AAT)
+
+# 3. Сингулярные числа
+# Сингулярные числа - квадратные корни из ненулевых собственных значений
+# Берем из eigvals_V (или eigvals_U), обрезаем отрицательные из-за погрешностей
+singular_values = np.sqrt(np.maximum(eigvals_V, 0))
+
+# ВАЖНО: согласование знаков векторов U и V
+for i in range(min(A.shape)):
+    if singular_values[i] > 1e-7:
+        # Ожидаемый вектор u_i
+        u_expected = A @ V[:, i] / singular_values[i]
+        # Если направления противоположны, меняем знак у столбца U
+        if np.dot(U[:, i], u_expected) < 0:
+            U[:, i] = -U[:, i]
+
+# Оставляем только ненулевые (в пределах точности)
+singular_values = singular_values[singular_values > 1e-7]
+
+# Формируем матрицу S нужного размера (m x n)
+S = np.zeros_like(A)
+for i in range(min(A.shape)):
+    if i < len(singular_values):
+        S[i, i] = singular_values[i]
+
+print("\nМатрица U (левые сингулярные векторы):")
+print(U)
+
+print("\nСингулярные числа:")
+print(singular_values)
+
+print("\nМатрица V (правые сингулярные векторы):")
+print(V)
+
+# Проверка SVD
+A_approx = U @ S @ V.T
+print("\n--- Проверка ---")
+print("Норма разности ||A - U S V^T||_2:")
+print(np.linalg.norm(A - A_approx, 2))
+
+[Markdown Cell]
+### Вывод
+
+В ходе работы была составлена матрица $A$ из набора данных `housing.csv`. С помощью реализованного метода вращений Якоби были найдены собственные значения и нормированные собственные векторы симметричных матриц $A A^T$ и $A^T A$. 
+
+Собственные векторы $A A^T$ образуют матрицу левых сингулярных векторов $U$, а собственные векторы $A^T A$ — матрицу правых сингулярных векторов $V$. Квадратные корни из ненулевых собственных значений дали сингулярные числа $\sigma_i$.
+
+Проверка показала, что восстановленная матрица $U S V^T$ с высокой точностью совпадает с исходной матрицей $A$ (норма разности близка к нулю), что подтверждает корректность реализованного метода Якоби и алгоритма построения сингулярного разложения.

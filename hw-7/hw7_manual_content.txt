@@ -1,0 +1,177 @@
+[Markdown Cell]
+# Домашняя работа 7. Нормы векторов и матриц
+**Колпакова Дарья Сергеевна, группа J3112, ИСУ 501390**
+
+**Вариант 11**
+
+**Задание:** реализовать вычисление 1-, 2- и inf-норм для векторов и матриц. Затем считать данные из файла `housing.csv`, программно составить матрицу размера `15 x 14`, используя все 14 столбцов и строки с номерами от `(i - 1) * 15` до `i * 15 - 1`, где `i` - номер варианта. После этого вычислить нормы полученной матрицы и вектора-столбца с индексом `i mod 14`.
+
+Для варианта `i = 11`:
+- берутся строки с `150` по `164` включительно;
+- индекс столбца равен `11 mod 14 = 11`.
+
+### Теоретические формулы
+
+Для вектора $x = (x_1, x_2, \dots, x_n)^T$:
+
+$$
+\|x\|_1 = \sum_{i=1}^{n} |x_i|
+$$
+
+$$
+\|x\|_2 = \sqrt{\sum_{i=1}^{n} x_i^2}
+$$
+
+$$
+\|x\|_{inf} = \max_{1 \le i \le n} |x_i|
+$$
+
+Для матрицы $A = (a_{ij})$:
+
+$$
+\|A\|_1 = \max_{1 \le j \le n} \sum_{i=1}^{m} |a_{ij}|
+$$
+
+$$
+\|A\|_2 = \sqrt{\lambda_{max}(A^T A)}
+$$
+
+$$
+\|A\|_{inf} = \max_{1 \le i \le m} \sum_{j=1}^{n} |a_{ij}|
+$$
+
+где $\lambda_{max}(A^T A)$ - максимальное собственное значение матрицы $A^T A$.
+
+В работе из файла `housing.csv` строится матрица `A` размера `15 x 14`, а затем выбирается вектор-столбец `x = A[:, 11]`.
+
+[Code Cell]
+import numpy as np
+import pandas as pd
+
+np.set_printoptions(precision=6, suppress=True)
+
+VARIANT = 11
+ROWS_IN_MATRIX = 15
+EXPECTED_COLS = 14
+CSV_PATH = "housing.csv"
+
+
+def read_housing_csv(path):
+    """
+    Пытаемся корректно прочитать housing.csv как с заголовком, так и без него.
+    В итоговой таблице должны остаться 14 числовых столбцов.
+    """
+    for header_mode in ["infer", None]:
+        df = pd.read_csv(path, header=header_mode)
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.shape[1] == EXPECTED_COLS:
+            return numeric_df
+
+    raise ValueError(
+        "Не удалось получить 14 числовых столбцов из файла housing.csv. "
+        "Проверьте формат файла."
+    )
+
+
+def vector_norm_1(x):
+    return float(np.sum(np.abs(x)))
+
+
+def vector_norm_2(x):
+    return float(np.sqrt(np.sum(x ** 2)))
+
+
+def vector_norm_inf(x):
+    return float(np.max(np.abs(x)))
+
+
+def matrix_norm_1(A):
+    return float(np.max(np.sum(np.abs(A), axis=0)))
+
+
+def matrix_norm_inf(A):
+    return float(np.max(np.sum(np.abs(A), axis=1)))
+
+
+def matrix_norm_2(A):
+    ATA = A.T @ A
+    eigenvalues = np.linalg.eigvalsh(ATA)
+    max_eigenvalue = float(np.max(np.clip(eigenvalues, 0, None)))
+    return float(np.sqrt(max_eigenvalue))
+
+
+# ---------- Чтение данных и построение матрицы ----------
+df = read_housing_csv(CSV_PATH)
+data = df.to_numpy(dtype=float)
+
+start_row = (VARIANT - 1) * ROWS_IN_MATRIX
+end_row = VARIANT * ROWS_IN_MATRIX
+
+if end_row > data.shape[0]:
+    raise ValueError(
+        f"В файле недостаточно строк: нужно минимум {end_row}, а есть {data.shape[0]}."
+    )
+
+A = data[start_row:end_row, :]
+
+if A.shape != (ROWS_IN_MATRIX, EXPECTED_COLS):
+    raise ValueError(
+        f"Получена матрица формы {A.shape}, ожидалась форма {(ROWS_IN_MATRIX, EXPECTED_COLS)}."
+    )
+
+
+# ---------- Выбор вектора-столбца ----------
+column_index = VARIANT % EXPECTED_COLS
+x = A[:, column_index]
+column_name = df.columns[column_index]
+
+
+# ---------- Вычисление норм ----------
+vector_norms = {
+    "||x||_1": vector_norm_1(x),
+    "||x||_2": vector_norm_2(x),
+    "||x||_inf": vector_norm_inf(x),
+}
+
+matrix_norms = {
+    "||A||_1": matrix_norm_1(A),
+    "||A||_2": matrix_norm_2(A),
+    "||A||_inf": matrix_norm_inf(A),
+}
+
+
+# ---------- Вывод результатов ----------
+print("Размер исходной числовой таблицы:", data.shape)
+print(f"Вариант: {VARIANT}")
+print(f"Берем строки с {start_row} по {end_row - 1} включительно")
+print(f"Индекс столбца: {column_index}")
+print(f"Выбранный столбец: {column_name} (A[:, {column_index}])")
+
+print("\nМатрица A (15 x 14):")
+print(A)
+
+print(f"\nВектор x = A[:, {column_index}] (столбец {column_name}):")
+print(x)
+
+print("\nНормы вектора x:")
+for name, value in vector_norms.items():
+    print(f"{name} = {value:.6f}")
+
+print("\nНормы матрицы A:")
+for name, value in matrix_norms.items():
+    print(f"{name} = {value:.6f}")
+
+
+# ---------- Проверка через numpy.linalg.norm ----------
+print("\nПроверка результатов с помощью numpy.linalg.norm:")
+print(f"vector 1-norm   : {np.linalg.norm(x, 1):.6f}")
+print(f"vector 2-norm   : {np.linalg.norm(x, 2):.6f}")
+print(f"vector inf-norm : {np.linalg.norm(x, np.inf):.6f}")
+print(f"matrix 1-norm   : {np.linalg.norm(A, 1):.6f}")
+print(f"matrix 2-norm   : {np.linalg.norm(A, 2):.6f}")
+print(f"matrix inf-norm : {np.linalg.norm(A, np.inf):.6f}")
+
+[Markdown Cell]
+### Вывод
+
+После запуска программы считывается файл `housing.csv`, из него автоматически формируется матрица `A` размера `15 x 14` по строкам `150..164`. Затем выбирается вектор `x = A[:, 11]`, который соответствует столбцу `B`. Для матрицы и выбранного вектора вычисляются 1-, 2- и inf-нормы по реализованным вручную формулам, после чего результат дополнительно проверяется через `numpy.linalg.norm`.

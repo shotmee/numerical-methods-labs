@@ -1,0 +1,167 @@
+[Markdown Cell]
+# Домашняя работа 9-10. Степенной метод и метод Ричардсона
+**Колпакова Дарья Сергеевна, группа J3112, ИСУ 501390**
+
+**Вариант 11**
+
+**Задание:**
+1. **ДЗ-10:** Реализовать поиск приближения к максимальному собственному числу матрицы $A$ степенным методом. Критерий остановки: $\|x_k - x_{k-1}\|_2 < 10^{-5}$, где $x_k$ — приближение к собственному вектору.
+2. **ДЗ-9:** Реализовать итеративный метод Ричардсона для решения СЛАУ $Ax = b$ с параметром $\tau = 1/M$, где $M$ — найденное степенным методом максимальное собственное число. Критерий остановки: $\|x_k - x_{k-1}\|_2 < 10^{-5}$.
+
+Исходные данные те же, что и в ДЗ-8:
+- $A = C^T C$ ($C$ — первые 13 столбцов файла `housing.csv`),
+- $b$ — вектор из 14-го столбца (строки с $130$ по $142$ включительно для варианта 11).
+
+[Markdown Cell]
+### Теоретическая справка: Степенной метод (ДЗ-10)
+
+Степенной метод позволяет найти наибольшее по модулю собственное значение матрицы и соответствующий ему собственный вектор.
+Итерационный процесс задается формулой:
+$$x^{k+1} = \frac{A x^k}{\|A x^k\|}$$
+где $x^0 \neq 0$ — начальное приближение.
+
+Приближение к самому собственному числу $\lambda_{max}$ (которое мы обозначим как $M$) находится из отношения Релея:
+$$M = \lambda_{max} \approx \frac{(Ax^k, x^k)}{(x^k, x^k)}$$
+
+[Code Cell]
+import numpy as np
+import pandas as pd
+import warnings
+
+warnings.filterwarnings('ignore')
+np.set_printoptions(precision=6, suppress=True)
+
+VARIANT = 11
+TOLERANCE = 1e-5
+MAX_ITER = 100000
+CSV_PATH = "housing.csv"
+
+# ---------- Подготовка данных ----------
+def read_housing_data(path):
+    for header_mode in ["infer", None]:
+        df = pd.read_csv(path, header=header_mode)
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.shape[1] == 14:
+            return numeric_df.to_numpy(dtype=float)
+    raise ValueError("Не удалось получить 14 числовых столбцов.")
+
+data = read_housing_data(CSV_PATH)
+
+C = data[:, :13]
+A = C.T @ C
+
+start_row = (VARIANT - 1) * 13
+end_row = VARIANT * 13
+b = data[start_row:end_row, 13]
+
+print(f"Размерность матрицы A: {A.shape}")
+print(f"Размерность вектора b: {b.shape}")
+
+[Code Cell]
+# ---------- ДЗ-10: Степенной метод ----------
+
+def power_method(A, tol=1e-5, max_iter=100000):
+    n = A.shape[0]
+    # Задаем начальное приближение вектора
+    x = np.ones(n)
+    x = x / np.linalg.norm(x, 2)
+    
+    for k in range(1, max_iter + 1):
+        Ax = A @ x
+        x_new = Ax / np.linalg.norm(Ax, 2)
+        
+        # Критерий остановки по норме разности векторов
+        if np.linalg.norm(x_new - x, 2) < tol:
+            # Вычисляем собственное число через отношение Релея
+            eigenvalue = (x_new.T @ A @ x_new) / (x_new.T @ x_new)
+            return eigenvalue, x_new, k
+            
+        x = x_new
+        
+    return None, None, max_iter
+
+print("--- Степенной метод (поиск максимального собственного числа) ---")
+M, eigvec, iters_pm = power_method(A, tol=TOLERANCE, max_iter=MAX_ITER)
+
+if M is not None:
+    print(f"Метод сошелся за {iters_pm} итераций.")
+    print(f"Максимальное собственное число M = {M:.6f}")
+else:
+    print("Степенной метод не сошелся.")
+
+# Проверка через встроенную функцию
+eigenvalues_exact = np.linalg.eigvalsh(A)
+M_exact = np.max(eigenvalues_exact)
+print(f"Точное максимальное собственное число (np.linalg.eigvalsh): {M_exact:.6f}")
+print(f"Погрешность вычисления M: {abs(M - M_exact):.6e}")
+
+[Markdown Cell]
+### Теоретическая справка: Метод Ричардсона (ДЗ-9)
+
+Метод Ричардсона — это итерационный метод решения СЛАУ $Ax = b$.
+Умножим левую и правую части на параметр $\tau > 0$ и вычтем из обеих частей $x$:
+$$x = (E - \tau A)x + \tau b$$
+Получаем итерационный процесс:
+$$x^{k+1} = (E - \tau A)x^k + \tau b$$
+
+Метод сходится, если $A = A^T > 0$ и параметр $\tau \in \left(0, \frac{2}{M}\right)$, где $M$ — максимальное собственное значение матрицы $A$.
+В нашем задании мы используем $\tau = \frac{1}{M}$.
+
+[Code Cell]
+# ---------- ДЗ-9: Метод Ричардсона ----------
+
+def richardson_method(A, b, tau, tol=1e-5, max_iter=100000):
+    n = len(b)
+    x = np.zeros(n)
+    E = np.eye(n)
+    
+    S = E - tau * A
+    c = tau * b
+    
+    for k in range(1, max_iter + 1):
+        x_new = S @ x + c
+        
+        if np.linalg.norm(x_new - x, 2) < tol:
+            return x_new, k
+            
+        x = x_new
+        
+        if np.any(np.isnan(x)) or np.any(np.isinf(x)):
+            print(f"Метод Ричардсона разошелся на итерации {k}")
+            return None, k
+            
+    print("Метод Ричардсона: достигнуто максимальное число итераций.")
+    return x, max_iter
+
+print("\n--- Метод Ричардсона ---")
+if M is not None:
+    tau = 1.0 / M
+    print(f"Используемый параметр tau = 1/M = {tau:.6e}")
+    
+    x_rich, iters_rich = richardson_method(A, b, tau, tol=TOLERANCE, max_iter=MAX_ITER)
+    
+    if x_rich is not None:
+        print(f"Решение найдено за {iters_rich} итераций.")
+        print("x =", x_rich)
+        
+        # Проверка через встроенный решатель
+        try:
+            x_exact = np.linalg.solve(A, b)
+            print("\nТочное решение (np.linalg.solve):")
+            print("x =", x_exact)
+            print(f"Погрешность метода Ричардсона: {np.linalg.norm(x_rich - x_exact, 2):.6e}")
+        except np.linalg.LinAlgError:
+            print("Матрица A вырождена, точное решение найти невозможно.")
+else:
+    print("Невозможно запустить метод Ричардсона, так как M не найдено.")
+
+[Markdown Cell]
+### Вывод
+
+1. **Степенной метод** успешно нашел максимальное собственное число $M$ матрицы $A = C^T C$. Значение совпало с точным (полученным через `np.linalg.eigvalsh`) с высокой точностью.
+2. **Метод Ричардсона** остановился на первой итерации в силу особенностей исходных данных и заданного критерия остановки $\|x_k - x_{k-1}\|_2 < 10^{-5}$:
+   - Матрица $A = C^T C$ имеет очень большое максимальное собственное число $M$ (порядка $10^8$).
+   - Из-за этого итерационный параметр $\tau = 1/M$ получается крайне малым (порядка $10^{-9}$).
+   - На первой итерации из нулевого начального приближения получается вектор $x_1 = \tau b$. Так как $\tau$ очень мало, элементы вектора $x_1$ имеют порядок $10^{-7}$.
+   - Норма разности $\|x_1 - x_0\|_2 = \|x_1\|_2 \approx 10^{-7}$, что сразу оказывается меньше заданного порога $\varepsilon = 10^{-5}$.
+   - **Итог:** Условие остановки формально выполнилось на первом же шаге из-за специфики масштаба данных (очень большое собственное число) и малого значения шага $\tau$.
