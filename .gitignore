@@ -3,3 +3,4 @@ lectures.pdf
 exam_questions_detailed.md
 __pycache__/
 .ipynb_checkpoints/
+*_detailed_explanation.md
